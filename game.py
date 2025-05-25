@@ -14,15 +14,21 @@ PLAYER_WIDTH = 50
 PLAYER_HEIGHT = 30
 PLAYER_SPEED = 8
 BALLOON_SIZE = 40
-BALLOON_SPEED_MIN = 1
-BALLOON_SPEED_MAX = 3
 BULLET_SIZE = 5
 BULLET_SPEED = 10
 BLACK = (0, 0, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
+YELLOW = (255, 255, 0)
+PURPLE = (128, 0, 128)
+GOLD = (255, 215, 0)
 WHITE = (255, 255, 255)
 SCORE_FILE = "highscore.json"
+
+# Balloon types
+NORMAL_BALLOON = 0
+SPECIAL_BALLOON = 1
 
 # Create the screen
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -34,14 +40,32 @@ player_pos = [SCREEN_WIDTH // 2, SCREEN_HEIGHT - PLAYER_HEIGHT - 10]
 # Bullets
 bullets = []
 
-# Balloons
+# Balloons - [x, y, speed, color, type, points]
 balloons = []
-balloon_spawn_timer = 0
-balloon_spawn_delay = 60  # frames
+
+# Available colors for normal balloons
+balloon_colors = [RED, BLUE, GREEN, YELLOW, PURPLE]
 
 # Score
 score = 0
 font = pygame.font.SysFont(None, 36)
+small_font = pygame.font.SysFont(None, 24)
+
+# Level system
+level = 1
+score_to_next_level = 100
+level_multiplier = 1.5  # Each level increases the required score by this factor
+
+# Level-specific settings
+def get_level_settings(current_level):
+    return {
+        "balloon_speed_min": 1 + (current_level * 0.2),
+        "balloon_speed_max": 3 + (current_level * 0.3),
+        "spawn_delay": max(10, 60 - (current_level * 5)),  # Faster spawning at higher levels
+        "special_balloon_chance": min(0.5, 0.2 + (current_level * 0.05))  # More special balloons at higher levels
+    }
+
+level_settings = get_level_settings(level)
 
 # Load high score
 def load_high_score():
@@ -66,6 +90,7 @@ high_score = load_high_score()
 # Game loop
 clock = pygame.time.Clock()
 running = True
+balloon_spawn_timer = 0
 
 while running:
     # Process events
@@ -92,13 +117,30 @@ while running:
         if bullet[1] < 0:
             bullets.remove(bullet)
     
+    # Check for level up
+    if score >= score_to_next_level:
+        level += 1
+        score_to_next_level = int(score_to_next_level * level_multiplier)
+        level_settings = get_level_settings(level)
+    
     # Spawn balloons
     balloon_spawn_timer += 1
-    if balloon_spawn_timer >= balloon_spawn_delay:
+    if balloon_spawn_timer >= level_settings["spawn_delay"]:
         balloon_spawn_timer = 0
         balloon_x = random.randint(0, SCREEN_WIDTH - BALLOON_SIZE)
-        balloon_speed = random.uniform(BALLOON_SPEED_MIN, BALLOON_SPEED_MAX)
-        balloons.append([balloon_x, 0, balloon_speed])
+        balloon_speed = random.uniform(level_settings["balloon_speed_min"], level_settings["balloon_speed_max"])
+        
+        # Determine if this is a special balloon
+        if random.random() < level_settings["special_balloon_chance"]:
+            balloon_type = SPECIAL_BALLOON
+            balloon_color = GOLD
+            points = 30  # Special balloons are worth more
+        else:
+            balloon_type = NORMAL_BALLOON
+            balloon_color = random.choice(balloon_colors)
+            points = 10
+            
+        balloons.append([balloon_x, 0, balloon_speed, balloon_color, balloon_type, points])
     
     # Update balloons
     for balloon in balloons[:]:
@@ -116,10 +158,10 @@ while running:
                 if bullet in bullets:
                     bullets.remove(bullet)
                 if balloon in balloons:
+                    score += balloon[5]  # Add points based on balloon type
                     balloons.remove(balloon)
-                score += 10
-                if score > high_score:
-                    high_score = score
+                    if score > high_score:
+                        high_score = score
     
     # Clear the screen
     screen.fill(WHITE)
@@ -134,15 +176,30 @@ while running:
     
     # Draw balloons
     for balloon in balloons:
-        pygame.draw.circle(screen, RED, (int(balloon[0] + BALLOON_SIZE//2), int(balloon[1] + BALLOON_SIZE//2)), BALLOON_SIZE//2)
-        pygame.draw.line(screen, BLACK, (balloon[0] + BALLOON_SIZE//2, balloon[1] + BALLOON_SIZE), 
-                        (balloon[0] + BALLOON_SIZE//2, balloon[1] + BALLOON_SIZE + 10), 2)
+        balloon_x, balloon_y, _, balloon_color, balloon_type, _ = balloon
+        
+        # Draw the balloon with its color
+        pygame.draw.circle(screen, balloon_color, (int(balloon_x + BALLOON_SIZE//2), int(balloon_y + BALLOON_SIZE//2)), BALLOON_SIZE//2)
+        
+        # Draw string
+        pygame.draw.line(screen, BLACK, (balloon_x + BALLOON_SIZE//2, balloon_y + BALLOON_SIZE), 
+                        (balloon_x + BALLOON_SIZE//2, balloon_y + BALLOON_SIZE + 10), 2)
+        
+        # For special balloons, add a small star or indicator
+        if balloon_type == SPECIAL_BALLOON:
+            # Draw a small star (simplified as a small circle)
+            pygame.draw.circle(screen, WHITE, (int(balloon_x + BALLOON_SIZE//2), int(balloon_y + BALLOON_SIZE//2)), BALLOON_SIZE//4)
     
-    # Draw score
+    # Draw score and level information
     score_text = font.render(f"Score: {score}", True, BLACK)
     high_score_text = font.render(f"High Score: {high_score}", True, BLACK)
+    level_text = font.render(f"Level: {level}", True, BLACK)
+    next_level_text = small_font.render(f"Next level at: {score_to_next_level}", True, BLACK)
+    
     screen.blit(score_text, (10, 10))
     screen.blit(high_score_text, (10, 50))
+    screen.blit(level_text, (10, 90))
+    screen.blit(next_level_text, (10, 130))
     
     # Update the display
     pygame.display.flip()
